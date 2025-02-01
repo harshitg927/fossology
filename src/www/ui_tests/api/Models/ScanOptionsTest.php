@@ -18,9 +18,11 @@ namespace Fossology\UI\Api\Test\Models
   use Fossology\UI\Api\Models\Reuser;
   use Fossology\UI\Api\Models\Decider;
   use Fossology\UI\Api\Models\Scancode;
+  use Fossology\UI\Api\Models\Info;
   use Fossology\Lib\Dao\UserDao;
   use Fossology\Lib\Auth\Auth;
   use Symfony\Component\HttpFoundation\Request;
+  use Fossology\UI\Api\Models\ApiVersion;
 
   /**
    * @class ScanOptionsTest
@@ -53,9 +55,16 @@ namespace Fossology\UI\Api\Test\Models
     public function setUp() : void
     {
       global $container;
-      $container = M::mock('ContainerBuilder');
+      
       $this->agentAdderMock = M::mock('overload:\AgentAdder');
       $this->userDao = M::mock(UserDao::class);
+      
+      // Mock ApiVersion::getVersionFromUri
+      $apiVersionMock = M::mock('alias:' . ApiVersion::class);
+      $apiVersionMock->shouldReceive('getVersionFromUri')
+        ->andReturn(ApiVersion::V1);
+      
+      $container = M::mock('ContainerBuilder');
       $container->shouldReceive('get')->withArgs(["dao.user"])
         ->andReturn($this->userDao);
       $container->shouldReceive('get')->andReturn(null);
@@ -73,14 +82,25 @@ namespace Fossology\UI\Api\Test\Models
     }
 
     /**
+     * @brief Teardown test objects
+     * @see PHPUnit_Framework_TestCase::tearDown()
+     */
+    protected function tearDown(): void
+    {
+      M::close();
+      parent::tearDown();
+    }
+
+    /**
      * Prepare request for scan
-     * @param Request $request
      * @param array $reuserOpts
      * @param array $deciderOpts
      * @return Request
      */
-    private function prepareRequest($request, $reuserOpts, $deciderOpts)
+    private function prepareRequest($reuserOpts, $deciderOpts)
     {
+      $request = new Request();
+
       if (!empty($reuserOpts)) {
         $reuserSelector = $reuserOpts['upload'] . "," . $reuserOpts['group'];
         $request->request->set('uploadToReuse', $reuserSelector);
@@ -99,11 +119,9 @@ namespace Fossology\UI\Api\Test\Models
 
     /**
      * @test
-     * -# Test for ScanOptions::scheduleAgents()
-     * -# Prepare Request and call ScanOptions::scheduleAgents()
-     * -# Function should call AgentAdder::scheduleAgents()
+     * -# Test for ScanOptions::scheduleAgents() with API V1
      */
-    public function testScheduleAgents()
+    public function testScheduleAgentsV1()
     {
       $reuseUploadId = 2;
       $uploadId = 4;
@@ -120,8 +138,8 @@ namespace Fossology\UI\Api\Test\Models
         'nomosInMonk',
         'ojoNoContradiction'
       ];
-      $request = new Request();
-      $request = $this->prepareRequest($request, $reuserOpts, $deciderOpts);
+      
+      $request = $this->prepareRequest($reuserOpts, $deciderOpts);
 
       $analysis = new Analysis();
       $analysis->setUsingString("nomos,ojo,monk");
@@ -139,11 +157,88 @@ namespace Fossology\UI\Api\Test\Models
 
       $this->userDao->shouldReceive('getGroupIdByName')
         ->withArgs([$groupName])->andReturn($groupId);
+
+      $mockInfo = M::mock(Info::class);
+      $mockInfo->shouldReceive('getCode')->andReturn(201);
+      $mockInfo->shouldReceive('getMessage')->andReturn('Schedule successful');
+      
       $this->agentAdderMock->shouldReceive('scheduleAgents')
         ->once()
-        ->andReturn(25);
+        ->andReturn($mockInfo);
 
-      $scanOption->scheduleAgents($folderId, $uploadId);
+      $result = $scanOption->scheduleAgents($folderId, $uploadId);
+      
+      $this->assertInstanceOf(Info::class, $result);
+      $this->assertEquals(201, $result->getCode());
+      $this->assertEquals('Schedule successful', $result->getMessage());
+    }
+
+    /**
+     * @test
+     * -# Test for ScanOptions::scheduleAgents() with API V2
+     */
+    public function testScheduleAgentsV2()
+    {
+      // Mock ApiVersion to return V2
+      $apiVersionMock = M::mock('alias:' . ApiVersion::class);
+      $apiVersionMock->shouldReceive('getVersionFromUri')
+        ->andReturn(ApiVersion::V2);
+
+      $reuseUploadId = 2;
+      $uploadId = 4;
+      $folderId = 2;
+      $groupId = 2;
+      $groupName = "fossy";
+      
+      // V2-specific agent setup
+      $reuserOpts = [
+        'upload' => $reuseUploadId,
+        'group' => $groupId,
+        'rules' => []
+      ];
+      $deciderOpts = [
+        'nomosInMonk',
+        'ojoNoContradiction'
+      ];
+      
+      $request = $this->prepareRequest($reuserOpts, $deciderOpts);
+
+      $analysis = new Analysis();
+      // Using V2 specific agent names
+      $analysis->setUsingString("nomos,copyrightEmailAuthor,ipra,pkgagent,softwareHeritage");
+
+      $reuse = new Reuser($reuseUploadId, $groupName);
+
+      $decider = new Decider();
+      $decider->setOjoDecider(true);
+      $decider->setNomosMonk(true);
+      $decider->setConcludeLicenseType("Permissive");
+
+      $scancode = new Scancode();
+      $scancode->setScanLicense(true);
+      $scancode->setScanCopyright(true);
+      $scancode->setScanEmail(true);
+      $scancode->setScanUrl(true);
+
+      $scanOption = new ScanOptions($analysis, $reuse, $decider, $scancode);
+
+      $this->userDao->shouldReceive('getGroupIdByName')
+        ->withArgs([$groupName])->andReturn($groupId);
+
+      $mockInfo = M::mock(Info::class);
+      $mockInfo->shouldReceive('getCode')->andReturn(201);
+      $mockInfo->shouldReceive('getMessage')->andReturn('Schedule successful');
+      
+      // Expected V2 specific agents
+      $this->agentAdderMock->shouldReceive('scheduleAgents')
+        ->once()
+        ->andReturn($mockInfo);
+
+      $result = $scanOption->scheduleAgents($folderId, $uploadId);
+      
+      $this->assertInstanceOf(Info::class, $result);
+      $this->assertEquals(201, $result->getCode());
+      $this->assertEquals('Schedule successful', $result->getMessage());
     }
   }
 }
