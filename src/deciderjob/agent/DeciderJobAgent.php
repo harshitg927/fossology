@@ -39,6 +39,7 @@ use Fossology\Lib\BusinessRules\LicenseMap;
 use Fossology\Lib\Dao\ClearingDao;
 use Fossology\Lib\Dao\UploadDao;
 use Fossology\Lib\Dao\HighlightDao;
+use Fossology\Lib\Data\Clearing\ClearingEventTypes;
 use Fossology\Lib\Data\DecisionTypes;
 use Fossology\Lib\Data\Tree\ItemTreeBounds;
 
@@ -184,17 +185,40 @@ class DeciderJobAgent extends Agent
 
     $itemId = $itemTreeBounds->getItemId();
 
+    // Check if any of the events are from kotobabulk
+    $hasKotobabulkEvents = false;
+    if (!empty($additionalEventsFromThisJob)) {
+      $eventIds = array_values($additionalEventsFromThisJob);
+      $stmt = __METHOD__ . ".checkKotobabulk";
+      $sql = "SELECT COUNT(*) as count FROM clearing_event 
+              WHERE clearing_event_pk = ANY($1::int[]) AND type_fk = $2";
+      $this->dbManager->prepare($stmt, $sql);
+      $eventIdsArray = '{' . implode(',', $eventIds) . '}';
+      $result = $this->dbManager->execute($stmt, 
+        array($eventIdsArray, ClearingEventTypes::KOTOBA));
+      $row = $this->dbManager->fetchArray($result);
+      $hasKotobabulkEvents = (intval($row['count']) > 0);
+      $this->dbManager->freeResult($result);
+    }
+
     switch ($this->conflictStrategyId) {
       case self::FORCE_DECISION:
         $createDecision = true;
         break;
 
       default:
-        $createDecision = !$this->clearingDecisionProcessor->hasUnhandledScannerDetectedLicenses($itemTreeBounds, $groupId, $additionalEventsFromThisJob, $this->licenseMap);
+        // If kotobabulk has findings, exclude other agents from conflict detection
+        $excludeAgents = $hasKotobabulkEvents ? array('nomos', 'monk', 'ojo', 'scancode') : array();
+        $createDecision = !$this->clearingDecisionProcessor->hasUnhandledScannerDetectedLicenses(
+          $itemTreeBounds, $groupId, $additionalEventsFromThisJob, $this->licenseMap, $excludeAgents);
     }
 
     if ($createDecision) {
-      $this->clearingDecisionProcessor->makeDecisionFromLastEvents($itemTreeBounds, $userId, $groupId, DecisionTypes::IDENTIFIED, $this->decisionIsGlobal, $additionalEventsFromThisJob);
+      // When kotobabulk has findings, exclude AGENT type findings (nomos, monk, ojo, scancode)
+      // but keep other types like USER, BULK, AUTO, IMPORT, KOTOBA
+      $this->clearingDecisionProcessor->makeDecisionFromLastEvents(
+        $itemTreeBounds, $userId, $groupId, DecisionTypes::IDENTIFIED, 
+        $this->decisionIsGlobal, $additionalEventsFromThisJob, false, $hasKotobabulkEvents);
     } else {
       foreach ($additionalEventsFromThisJob as $eventId) {
         $this->clearingDao->copyEventIdTo($eventId, $itemId, $userId, $groupId);

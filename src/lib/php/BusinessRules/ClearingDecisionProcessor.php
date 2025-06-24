@@ -65,9 +65,11 @@ class ClearingDecisionProcessor
    *        by licenseId
    * @param null|LicenseMap $licenseMap If given then license are considered as
    *        equal iff mapped to same
+   * @param array $excludeAgents List of agent names to exclude from conflict
+   *        detection (e.g., when kotobabulk has findings, exclude other agents)
    * @return bool True if unhandled licenses found, false otherwise.
    */
-  public function hasUnhandledScannerDetectedLicenses(ItemTreeBounds $itemTreeBounds, $groupId, $additionalEventIds = array(), $licenseMap=null)
+  public function hasUnhandledScannerDetectedLicenses(ItemTreeBounds $itemTreeBounds, $groupId, $additionalEventIds = array(), $licenseMap=null, $excludeAgents = array())
   {
     if (!empty($licenseMap) && !($licenseMap instanceof LicenseMap)) {
       throw new Exception('invalid license map');
@@ -75,6 +77,26 @@ class ClearingDecisionProcessor
     $userEvents = $this->clearingDao->getRelevantClearingEvents($itemTreeBounds, $groupId);
     $usageId = empty($licenseMap) ? LicenseMap::TRIVIAL : $licenseMap->getUsage();
     $scannerDetectedEvents = $this->agentLicenseEventProcessor->getScannerEvents($itemTreeBounds,$usageId);
+    
+    // Filter out excluded agents from scanner events if excludeAgents is provided
+    if (!empty($excludeAgents)) {
+      $filteredScannerEvents = array();
+      foreach ($scannerDetectedEvents as $licenseId => $agentEvents) {
+        $filteredAgentEvents = array();
+        foreach ($agentEvents as $agentEvent) {
+          $agentName = $agentEvent->getAgentName();
+          if (!in_array($agentName, $excludeAgents)) {
+            $filteredAgentEvents[] = $agentEvent;
+          }
+        }
+        // Only include license if there are still agent events after filtering
+        if (!empty($filteredAgentEvents)) {
+          $filteredScannerEvents[$licenseId] = $filteredAgentEvents;
+        }
+      }
+      $scannerDetectedEvents = $filteredScannerEvents;
+    }
+    
     $eventLicenceIds = array();
     foreach (array_keys($userEvents) as $licenseId) {
       $eventLicenceIds[empty($licenseMap)? $licenseId: $licenseMap->getProjectedId($licenseId)] = $licenseId;
@@ -144,8 +166,10 @@ class ClearingDecisionProcessor
    * @param int $type
    * @param boolean $global
    * @param array Additional event ids to include, indexed by licenseId
+   * @param boolean $autoConclude
+   * @param boolean $excludeAgentFindings If true, exclude AGENT type findings (nomos, monk, ojo, scancode)
    */
-  public function makeDecisionFromLastEvents(ItemTreeBounds $itemBounds, $userId, $groupId, $type, $global, $additionalEventIds = array(), $autoConclude = false)
+  public function makeDecisionFromLastEvents(ItemTreeBounds $itemBounds, $userId, $groupId, $type, $global, $additionalEventIds = array(), $autoConclude = false, $excludeAgentFindings = false)
   {
     if ($type < self::NO_LICENSE_KNOWN_DECISION_TYPE) {
       return;
@@ -158,6 +182,18 @@ class ClearingDecisionProcessor
       $includeSubFolders = true;
     }
     $previousEvents = $this->clearingDao->getRelevantClearingEvents($itemBounds, $groupId, $includeSubFolders);
+    
+    // Filter out AGENT type findings (nomos, monk, ojo, scancode) if excludeAgentFindings is true
+    // Keep all other types: USER, BULK, AUTO, IMPORT, KOTOBA
+    if ($excludeAgentFindings) {
+      $filteredPreviousEvents = array();
+      foreach ($previousEvents as $licenseId => $clearingEvent) {
+        if ($clearingEvent->getEventType() != ClearingEventTypes::AGENT) {
+          $filteredPreviousEvents[$licenseId] = $clearingEvent;
+        }
+      }
+      $previousEvents = $filteredPreviousEvents;
+    }
     if ($type === self::NO_LICENSE_KNOWN_DECISION_TYPE) {
       $type = DecisionTypes::IDENTIFIED;
       $clearingEventIds = $this->insertClearingEventsForAgentFindings($itemBounds, $userId, $groupId, true, ClearingEventTypes::USER);
@@ -169,8 +205,13 @@ class ClearingDecisionProcessor
         }
       }
     } else {
-      $clearingEventIds = $this->insertClearingEventsForAgentFindings($itemBounds, $userId, $groupId, false,
-        $autoConclude ? ClearingEventTypes::AUTO : ClearingEventTypes::AGENT, $previousEvents);
+      // When excludeAgentFindings is true, skip creating new AGENT events from scanner findings
+      if ($excludeAgentFindings) {
+        $clearingEventIds = array();
+      } else {
+        $clearingEventIds = $this->insertClearingEventsForAgentFindings($itemBounds, $userId, $groupId, false,
+          $autoConclude ? ClearingEventTypes::AUTO : ClearingEventTypes::AGENT, $previousEvents);
+      }
       foreach ($previousEvents as $clearingEvent) {
         $clearingEventIds[$clearingEvent->getLicenseId()] = $clearingEvent->getEventId();
       }
