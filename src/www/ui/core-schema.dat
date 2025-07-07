@@ -497,6 +497,10 @@
   $Schema["TABLE"]["custom_phrase"]["text"]["ADD"] = "ALTER TABLE \"custom_phrase\" ADD COLUMN \"text\" text";
   $Schema["TABLE"]["custom_phrase"]["text"]["ALTER"] = "ALTER TABLE \"custom_phrase\" ALTER COLUMN \"text\" SET NOT NULL";
 
+  $Schema["TABLE"]["custom_phrase"]["text_md5"]["DESC"] = "COMMENT ON COLUMN \"custom_phrase\".\"text_md5\" IS 'MD5 hash of the text content for duplicate detection'";
+  $Schema["TABLE"]["custom_phrase"]["text_md5"]["ADD"] = "ALTER TABLE \"custom_phrase\" ADD COLUMN \"text_md5\" varchar(32)";
+  $Schema["TABLE"]["custom_phrase"]["text_md5"]["ALTER"] = "ALTER TABLE \"custom_phrase\" ALTER COLUMN \"text_md5\" SET NOT NULL";
+
   $Schema["TABLE"]["custom_phrase"]["acknowledgement"]["DESC"] = "COMMENT ON COLUMN \"custom_phrase\".\"acknowledgement\" IS 'Acknowledgement text for the license'";
   $Schema["TABLE"]["custom_phrase"]["acknowledgement"]["ADD"] = "ALTER TABLE \"custom_phrase\" ADD COLUMN \"acknowledgement\" text";
   $Schema["TABLE"]["custom_phrase"]["acknowledgement"]["ALTER"] = "ALTER TABLE \"custom_phrase\" ALTER COLUMN \"acknowledgement\" DROP NOT NULL";
@@ -2788,6 +2792,7 @@
   $Schema["INDEX"]["copyright_spasht"]["copyright_spasht_pfile_hash_index"] = "CREATE INDEX copyright_spasht_pfile_hash_index ON copyright_spasht USING btree (hash, pfile_fk);";
 
   $Schema["INDEX"]["custom_phrase"]["cp_user_group_idx"] = "CREATE INDEX cp_user_group_idx ON custom_phrase USING btree (user_fk, group_fk);";
+  $Schema["INDEX"]["custom_phrase"]["cp_text_md5_unique_idx"] = "CREATE UNIQUE INDEX cp_text_md5_unique_idx ON custom_phrase USING btree (text_md5);";
   
   // Junction table indexes for custom_phrase_license_map
   $Schema["INDEX"]["custom_phrase_license_map"]["cplm_cp_pk_idx"] = "CREATE INDEX cplm_cp_pk_idx ON custom_phrase_license_map USING btree (cp_pk);";
