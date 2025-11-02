@@ -614,6 +614,13 @@ function Populate_sysconfig()
   $valueArray[$variable] = array("'$variable'", "''", "'$prompt'",
     strval(CONFIG_TYPE_PASSWORD), "'LicenseDB'", "5", "'$desc'", "null", "null");
 
+  /* Kotobabulk Agent */
+  $variable = "KotobabulkDelimiters";
+  $prompt = _('Kotoba Agent Delimiters');
+  $desc = _('Comma-separated list of delimiter characters for kotoba agent. Space is always included as a delimiter. Leave empty to use only space. Example: ",;\t"');
+  $valueArray[$variable] = array("'$variable'", "' '", "'$prompt'",
+    strval(CONFIG_TYPE_TEXT), "'Kotoba'", "1", "'$desc'", "null", "null");
+
   /* Doing all the rows as a single insert will fail if any row is a dupe.
    So insert each one individually so that new variables get added.
   */

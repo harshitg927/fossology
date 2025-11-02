@@ -25,6 +25,62 @@ int phrase_onAllMatches(KotobaState* state, const File* file, const GArray* matc
 MatchCallbacks phraseCallbacks = {.onAll = phrase_onAllMatches};
 
 /**
+ * \brief Parse comma-separated delimiter string and ensure space is always included
+ * \param input Comma-separated delimiter string (e.g., ",;\t")
+ * \return Parsed delimiter string with space always included (caller must free with g_free)
+ */
+char* parseDelimiters(const char* input) {
+  if (input == NULL || strlen(input) == 0) {
+    // Default to space only
+    return g_strdup(" ");
+  }
+
+  // Use GString to build the result
+  GString* result = g_string_new(" ");  // Always start with space
+  gboolean spaceFound = FALSE;
+
+  // Split by comma
+  gchar** tokens = g_strsplit(input, ",", -1);
+  
+  for (int i = 0; tokens[i] != NULL; i++) {
+    gchar* token = g_strstrip(tokens[i]);  // Remove leading/trailing whitespace
+    
+    if (strlen(token) > 0) {
+      // Check each character in the token
+      for (int j = 0; token[j] != '\0'; j++) {
+        char c = token[j];
+        
+        // Check if this character is already in result
+        if (strchr(result->str, c) == NULL) {
+          g_string_append_c(result, c);
+        }
+        
+        // Track if we found space
+        if (c == ' ') {
+          spaceFound = TRUE;
+        }
+      }
+    }
+  }
+  
+  g_strfreev(tokens);
+  
+  // Ensure space is in the result (it should be from initialization, but double-check)
+  if (!spaceFound && strchr(result->str, ' ') == NULL) {
+    // Prepend space if somehow not present
+    GString* temp = g_string_new(" ");
+    g_string_append(temp, result->str);
+    g_string_free(result, TRUE);
+    result = temp;
+  }
+  
+  gchar* finalResult = result->str;
+  g_string_free(result, FALSE);  // Don't free the char* data, just the GString wrapper
+  
+  return finalResult;
+}
+
+/**
  * \brief Build a Licenses* index from phrases for matching
  * \param phrases GArray* of Phrase* structures
  * \param delimiters Token delimiters to use
@@ -169,6 +225,10 @@ int processUploadWithPhrases(KotobaState* state, int uploadId) {
     return 1;
   }
   
+  // Read delimiter configuration from sysconfig
+  char* configDelimiters = fo_sysconfig("SYSCONFIG", "KotobabulkDelimiters");
+  char* delimiters = parseDelimiters(configDelimiters);
+  
   // Set up phrase mode arguments
   PhraseModeArgs args = {
     .uploadId = uploadId,
@@ -176,7 +236,7 @@ int processUploadWithPhrases(KotobaState* state, int uploadId) {
     .groupId = groupId,
     .jobId = jobId,
     .phrases = phrases,
-    .delimiters = g_strdup(DELIMITERS)
+    .delimiters = delimiters
   };
   
   state->ptr = &args;
