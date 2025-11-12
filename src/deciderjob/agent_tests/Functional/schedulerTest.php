@@ -316,7 +316,7 @@ class SchedulerTest extends \PHPUnit\Framework\TestCase
     $agentDao->shouldReceive('arsTableExists')->andReturn(true);
     $agentDao->shouldReceive('getCurrentAgentId')->andReturn($agentId=24);
     $agentDao->shouldReceive('writeArsRecord')->with(anything(), $agentId, $uploadId)->andReturn($arsId=2);
-    $agentDao->shouldReceive('writeArsRecord')->with(anything(), $agentId, $uploadId, $arsId, true)->andReturn(0);
+    $agentDao->shouldReceive('writeArsRecord')->with(anything(), $agentId, $uploadId, $arsId, anything())->andReturn(0);
 
     $jobId = 42;
     $groupId = 6;
@@ -352,14 +352,14 @@ class SchedulerTest extends \PHPUnit\Framework\TestCase
     /* /expectations for LicenseMap */
 
     $decisionProcessor->shouldReceive('hasUnhandledScannerDetectedLicenses')
-            ->with($bounds0, $groupId, array(), anything())->andReturn(true);
+            ->with($bounds0, $groupId, array(), anything(), anything())->andReturn(true);
     $clearingDao->shouldReceive('markDecisionAsWip')
             ->with($itemIds[0], $userId, $groupId);
 
     $decisionProcessor->shouldReceive('hasUnhandledScannerDetectedLicenses')
-            ->with($bounds1, $groupId, array(), anything())->andReturn(false);
+            ->with($bounds1, $groupId, array(), anything(), anything())->andReturn(false);
     $decisionProcessor->shouldReceive('makeDecisionFromLastEvents')
-            ->with($bounds1, $userId, $groupId, DecisionTypes::IDENTIFIED, false, array());
+            ->with($bounds1, $userId, $groupId, DecisionTypes::IDENTIFIED, false, array(), anything(), anything());
 
     $runner = new SchedulerTestRunnerMock($dbManager, $agentDao, $clearingDao, $uploadDao, $highlightDao, $decisionProcessor, $agentLicenseEventProcessor);
 
